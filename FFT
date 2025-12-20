@@ -1,0 +1,40 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import pywt
+import cv2
+
+# Загрузка изображения (используйте ваше изображение)
+image = cv2.imread('image.jpg', cv2.IMREAD_GRAYSCALE)
+
+# Применение вейвлет-преобразования
+coeffs = pywt.wavedec2(image, 'haar', level=2)  # Используйте 'haar' или другой вейвлет
+cA = coeffs[0]  # Коэффициенты приближения
+cH = coeffs[1][0]  # Горизонтальные детали
+cV = coeffs[1][1]  # Вертикальные детали
+cD = coeffs[1][2]  # Диагональные детали
+
+# Визуализация результатов
+plt.figure(figsize=(12, 8))
+
+plt.subplot(2, 2, 1)
+plt.title('Исходное изображение')
+plt.imshow(image, cmap='gray')
+plt.axis('off')
+
+plt.subplot(2, 2, 2)
+plt.title('Коэффициенты A (средние)')
+plt.imshow(cA, cmap='gray')
+plt.axis('off')
+
+plt.subplot(2, 2, 3)
+plt.title('Коэффициенты H (горизонтальные детали)')
+plt.imshow(cH, cmap='gray')
+plt.axis('off')
+
+plt.subplot(2, 2, 4)
+plt.title('Коэффициенты V (вертикальные детали)')
+plt.imshow(cV, cmap='gray')
+plt.axis('off')
+
+plt.tight_layout()
+plt.show()
