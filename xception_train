@@ -1,0 +1,288 @@
+%pip install pandas
+%pip install matplotlib
+%pip install numpy
+%pip install scipy
+%pip install scikit-learn
+%pip install kagglehub
+%pip install tensorflow
+import tensorflow.keras
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing import image
+import numpy as np
+%pip install "roboflow[desktop]"
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+import os
+import json
+import matplotlib.image as mpimg
+from PIL import Image
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
+#______________________________________________________________________________________________________________________________
+model = load_model('path/to/your/model') #модель xception
+base_dir = 'path/to/your/dataset' #датасет https://www.kaggle.com/datasets/manjilkarki/deepfake-and-real-images/data
+#______________________________________________________________________________________________________________________________
+# 1. Включаем eager execution
+import tensorflow as tf
+tf.config.run_functions_eagerly(True)
+
+# 2. ОПРЕДЕЛЯЕМ ПЕРЕМЕННЫЕ
+img_size = 224      # размер изображений
+batch_size = 32     # ЯВНО определяем batch_size
+
+# 3. СОЗДАЕМ ГЕНЕРАТОРЫ ДАННЫХ ПРЕЖДЕ ВСЕГО
+print("="*60)
+print("СОЗДАЕМ ГЕНЕРАТОРЫ ДАННЫХ")
+print("="*60)
+
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+# Создаем генераторы с разделением данных 80/20
+train_datagen = ImageDataGenerator(
+    rescale=1./255,
+    validation_split=0.2  # 20% для валидации
+)
+
+valid_datagen = ImageDataGenerator(rescale=1./255)
+
+# Создаем генераторы для тренировки и валидации
+train_gen = train_datagen.flow_from_directory(
+    base_dir,
+    target_size=(img_size, img_size),
+    batch_size=batch_size,
+    class_mode='categorical',
+    subset='training',  # 80% данных
+    shuffle=True
+)
+
+valid_gen = train_datagen.flow_from_directory(
+    base_dir,
+    target_size=(img_size, img_size),
+    batch_size=batch_size,
+    class_mode='categorical',
+    subset='validation',  # 20% данных
+    shuffle=False
+)
+
+print(f"✓ Train images: {train_gen.samples}")
+print(f"✓ Valid images: {valid_gen.samples}")
+print(f"✓ Классов в train_gen: {train_gen.num_classes}")
+print(f"✓ Классов в valid_gen: {valid_gen.num_classes}")
+print(f"✓ Batch size: {batch_size}")
+
+# 4. ТЕПЕРЬ ИСПРАВЛЯЕМ МОДЕЛЬ
+print("\n" + "="*60)
+print("ИСПРАВЛЯЕМ ВАШУ МОДЕЛЬ")
+print("="*60)
+
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense
+
+# Сохраняем архитектуру ВАШЕЙ модели
+print("1. Анализируем вашу модель...")
+model_config = model.get_config()
+
+# Удаляем проблемный последний слой
+print("2. Удаляем проблемный последний слой...")
+
+# Определяем количество классов ИЗ ГЕНЕРАТОРА
+num_classes = train_gen.num_classes
+print(f"3. Определили {num_classes} классов из данных")
+
+# Для Sequential моделей:
+if isinstance(model, tf.keras.Sequential):
+    print("Модель Sequential...")
+    
+    # Создаем новую модель с теми же слоями, кроме последнего
+    new_model = tf.keras.Sequential()
+    for layer in model.layers[:-1]:  # все слои кроме последнего
+        new_model.add(layer.__class__.from_config(layer.get_config()))
+    
+    # Добавляем правильный выходной слой
+    print(f"4. Добавляем выходной слой для {num_classes} классов...")
+    
+    if num_classes == 2:
+        # Проверяем формат данных
+        x_sample, y_sample = next(train_gen)
+        print(f"   Формат y_sample: {y_sample.shape}")
+        
+        if y_sample.shape[1] == 1:
+            new_model.add(Dense(1, activation='sigmoid'))
+            loss = 'binary_crossentropy'
+            print("   Используем бинарную классификацию (sigmoid)")
+        else:
+            new_model.add(Dense(2, activation='softmax'))
+            loss = 'categorical_crossentropy'
+            print("   Используем категориальную классификацию для 2 классов")
+    else:
+        new_model.add(Dense(num_classes, activation='softmax'))
+        loss = 'categorical_crossentropy'
+        print(f"   Используем категориальную классификацию для {num_classes} классов")
+    
+    # Копируем веса ИЗ ВАШЕЙ МОДЕЛИ
+    print("5. Копируем веса из вашей модели...")
+    for i in range(len(model.layers) - 1):
+        try:
+            new_model.layers[i].set_weights(model.layers[i].get_weights())
+            print(f"   ✓ Веса слоя {i} скопированы")
+        except:
+            print(f"   ⚠ Не удалось скопировать веса слоя {i}")
+
+# Для Functional API моделей:
+else:
+    print("Модель Functional API...")
+    
+    # Получаем выход предпоследнего слоя
+    x = model.layers[-2].output
+    
+    # Добавляем правильный выход
+    if num_classes == 2:
+        # Проверяем формат данных
+        x_sample, y_sample = next(train_gen)
+        print(f"   Формат y_sample: {y_sample.shape}")
+        
+        if y_sample.shape[1] == 1:
+            output = Dense(1, activation='sigmoid')(x)
+            loss = 'binary_crossentropy'
+        else:
+            output = Dense(2, activation='softmax')(x)
+            loss = 'categorical_crossentropy'
+    else:
+        output = Dense(num_classes, activation='softmax')(x)
+        loss = 'categorical_crossentropy'
+    
+    # Создаем новую модель
+    new_model = Model(inputs=model.input, outputs=output)
+    
+    # Копируем веса
+    for i in range(len(model.layers) - 1):
+        try:
+            new_model.layers[i].set_weights(model.layers[i].get_weights())
+            print(f"   ✓ Веса слоя {i} скопированы")
+        except:
+            print(f"   ⚠ Не удалось скопировать веса слоя {i}")
+
+# 5. СОЗДАЕМ НОВЫЙ ОПТИМИЗАТОР
+print("\n6. Создаем новый оптимизатор...")
+
+# Используем тот же тип оптимизатора, что и в оригинале
+if hasattr(model, 'optimizer'):
+    optimizer_name = model.optimizer.__class__.__name__
+    print(f"   Оригинальный оптимизатор: {optimizer_name}")
+    
+    if optimizer_name == 'Adam':
+        from tensorflow.keras.optimizers import Adam
+        optimizer = Adam(learning_rate=0.001)
+    elif optimizer_name == 'SGD':
+        from tensorflow.keras.optimizers import SGD
+        optimizer = SGD(learning_rate=0.01)
+    elif optimizer_name == 'RMSprop':
+        from tensorflow.keras.optimizers import RMSprop
+        optimizer = RMSprop(learning_rate=0.001)
+    else:
+        optimizer = 'adam'
+else:
+    optimizer = 'adam'
+
+print(f"   Используем оптимизатор: {optimizer}")
+
+# 6. КОМПИЛИРУЕМ С НОВЫМ ОПТИМИЗАТОРОМ
+print("\n7. Компилируем модель...")
+new_model.compile(
+    optimizer=optimizer,
+    loss=loss,
+    metrics=['accuracy']
+)
+
+print("✓ Модель успешно исправлена и скомпилирована!")
+print("\nАрхитектура исправленной модели:")
+new_model.summary()
+
+# 7. ПРОВЕРЯЕМ И ОБУЧАЕМ
+print("\n" + "="*60)
+print("ПРОВЕРКА И ОБУЧЕНИЕ")
+print("="*60)
+
+# Проверяем модель
+try:
+    x_test, y_test = next(train_gen)
+    print(f"Тестовый батч: x.shape={x_test.shape}, y.shape={y_test.shape}")
+    
+    predictions = new_model.predict(x_test[:2], verbose=0)
+    print(f"Predict выполнен! Выход shape: {predictions.shape}")
+    
+    if predictions.shape[1] == num_classes or (num_classes == 1 and predictions.shape[1] == 1):
+        print("✓ МОДЕЛЬ ГОТОВА К ОБУЧЕНИЮ!")
+    else:
+        print(f"⚠ Внимание: ожидалось (2, {num_classes}), получено {predictions.shape}")
+except Exception as e:
+    print(f"Ошибка теста: {e}")
+
+# 8. ПРАВИЛЬНЫЙ РАСЧЕТ ШАГОВ ДЛЯ ОБУЧЕНИЯ
+print("\n" + "="*60)
+print("РАСЧЕТ ШАГОВ ДЛЯ ОБУЧЕНИЯ")
+print("="*60)
+
+# ПРАВИЛЬНЫЙ расчет шагов:
+# steps_per_epoch = общее_количество_изображений_для_тренировки / batch_size
+
+# Вариант 1: Автоматический расчет (рекомендуется)
+steps_per_epoch = len(train_gen)  # train_gen уже знает сколько у него батчей
+validation_steps = len(valid_gen)
+
+print(f"Автоматический расчет:")
+print(f"  Steps per epoch: {steps_per_epoch}")
+print(f"  Validation steps: {validation_steps}")
+
+# Вариант 2: Ручной расчет для проверки
+manual_train_steps = train_gen.samples // batch_size
+if train_gen.samples % batch_size != 0:
+    manual_train_steps += 1  # добавляем неполный батч
+    
+manual_valid_steps = valid_gen.samples // batch_size
+if valid_gen.samples % batch_size != 0:
+    manual_valid_steps += 1
+
+print(f"\nРучной расчет (для проверки):")
+print(f"  Train images: {train_gen.samples}")
+print(f"  Valid images: {valid_gen.samples}")
+print(f"  Train steps: {manual_train_steps}")
+print(f"  Valid steps: {manual_valid_steps}")
+
+print(f"\nИспользуем: {steps_per_epoch} шагов на эпоху")
+print(f"          {validation_steps} шагов для валидации")
+
+# 9. ЗАПУСКАЕМ ОБУЧЕНИЕ
+print("\n" + "="*60)
+print("НАЧИНАЕМ ОБУЧЕНИЕ...")
+print("="*60)
+
+# Вариант A: Без указания шагов (рекомендуется)
+history = new_model.fit(
+    train_gen,  # генератор сам знает сколько у него шагов
+    validation_data=valid_gen,
+    epochs=3,
+    verbose=1
+)
+
+# ИЛИ Вариант B: С явным указанием шагов
+# history = new_model.fit(
+#     train_gen,
+#     steps_per_epoch=steps_per_epoch,
+#     validation_data=valid_gen,
+#     validation_steps=validation_steps,
+#     epochs=3,
+#     verbose=1
+# )
+
+print("\n" + "="*60)
+print("✓ ✓ ✓ УСПЕХ! МОДЕЛЬ ОБУЧЕНА!")
+print("="*60)
+print(f"Финальная точность: {history.history['accuracy'][-1]:.4f}")
+print(f"Валидационная точность: {history.history['val_accuracy'][-1]:.4f}")
+
+# Сохраняем модель
+new_model.save('path/to/your/new/model')
+print("\n✓ Модель сохранена как 'your_saved_million.h5'")
+print("✓ Ваш миллион спасен! 🎉")
+#______________________________________________________________________________________________________________________________
