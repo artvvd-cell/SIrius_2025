@@ -91,5 +91,8 @@ Accuracy = 45%. С учетом того, что у нас 2 класса, эт�
 Результат:
 
 ![](https://github.com/Marselel/vseros/blob/main/images/result_model_3.png)
+
+И вот такие предсказания делает модель:
+![](https://github.com/artvvd-cell/SIrius_2025/blob/main/images/predictions_model_3.png)
 ## 4. Выводы
 ## 5. Ограничений
