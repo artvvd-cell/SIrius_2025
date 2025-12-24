@@ -19,6 +19,7 @@
 
 Модель возвращает не только метку класса, но и вероятность (score) этого предсказания — чем ближе значение к 1.0, тем выше уверенность алгоритма в том, что изображение принадлежит соответствующему классу.
 ## 2. Изучение литературы
+[Обзор литературы](https://github.com/artvvd-cell/SIrius_2025/blob/main/docs/Literature_review.txt)
 ## 3. Наши эксперименты / вклад
 ### Датасеты: 
 1. [deepfake-and-real-images](https://www.kaggle.com/datasets/manjilkarki/deepfake-and-real-images)
